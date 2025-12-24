@@ -39,7 +39,7 @@ cd discord-vrc-status-bot
 ```
 ### **2\. 依存ライブラリのインストール**
 ```
-pip install \-r requirements.txt
+pip install -r requirements.txt
 ```
 Note: requirements.txt がない場合は以下をインストールしてください:  
 discord.py, requests, Pillow, pydantic, python-dotenv, google-genai
