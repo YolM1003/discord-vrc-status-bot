@@ -33,23 +33,23 @@ Google Gemini API (2.5 Flash/3 Flash) を活用し、単なるキーワード検
 ## **🛠 インストールと起動**
 
 ### **1\. リポジトリのクローン**
-
-git clone \[https://github.com/YolM1003/discord-vrc-status-bot.git\](https://github.com/YolM1003/discord-vrc-status-bot.git)  
+```
+git clone https://github.com/YolM1003/discord-vrc-status-bot.git
 cd discord-vrc-status-bot
-
+```
 ### **2\. 依存ライブラリのインストール**
-
+```
 pip install \-r requirements.txt
-
+```
 Note: requirements.txt がない場合は以下をインストールしてください:  
 discord.py, requests, Pillow, pydantic, python-dotenv, google-genai
 
 ### **3\. 環境変数の設定**
 
 .env.example をコピーして .env ファイルを作成し、キーを入力します。
-
+```
 cp .env.example .env
-
+```
 | 変数名 | 説明 | 必須 |
 | :---- | :---- | :---- |
 | GEMINI\_API\_KEY | Google AI Studioで取得したAPIキー | ✅ |
