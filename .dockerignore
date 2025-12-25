@@ -1,0 +1,7 @@
+pycache
+*.pyc
+.git
+.env
+.venv
+venv
+notify_channels.json

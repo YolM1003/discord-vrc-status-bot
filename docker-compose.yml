@@ -1,0 +1,19 @@
+services:
+  vrc-status-bot:
+    build: .
+    container_name: vrc-status-bot
+    restart: always
+    # 環境変数を .env ファイルから読み込む
+    env_file:
+      - .env
+    # データを永続化するための設定
+    volumes:
+      # ホスト側の notify_channels.json をコンテナ内にマウント
+      # 事前にホスト側で `echo "{}" > notify_channels.json` 等でファイルを作っておくこと
+      - ./notify_channels.json:/app/notify_channels.json
+    # ログ設定 (オプション: 容量圧迫を防ぐ)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
