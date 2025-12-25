@@ -1,0 +1,7 @@
+discord.py
+requests
+Pillow
+pydantic
+python-dotenv
+google-genai
+beautifulsoup4

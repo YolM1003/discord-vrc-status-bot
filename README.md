@@ -1,66 +1,156 @@
-# **VRChat Status Monitor Bot**
+# 📖 VRChat Status Bot 操作マニュアル (v2.0 Beta)
 
-VRChatの公式ステータスとTwitter(X)上のユーザー報告をリアルタイムで監視し、障害発生時にDiscordへ通知するBotです。  
-Google Gemini API (2.5 Flash/3 Flash) を活用し、単なるキーワード検知ではなく、状況の深刻度をAIがインテリジェントに分析して「本当に通知すべき障害か」を判断します。
+このドキュメントでは、VRChat Status Monitor Bot v2.0 Beta の **導入後の使い方** と **全コマンド**、通知ロジックの概要をまとめます。
 
-## **🚀 主な機能**
+---
 
-* **インテリジェント監視**  
-  * 10分ごとに「VRChat公式API」と「Twitter(X)の検索結果」を取得。  
-  * **Gemini 2.5 Flash** が情報を統合分析し、以下の基準で障害判定を行います。  
-    * **Major Outage**: 公式が認めている場合（即時通知）  
-    * **サイレント障害**: 公式発表前でも、ユーザーからの「入れない」「落ちた」報告が急増している場合  
-  * 単発のラグや個人の回線落ちは無視し、オオカミ少年化を防ぎます。  
-* **視覚的なステータス表示**  
-  * Botのオンラインステータス（🟢 オンライン / ⛔️ 取り込み中）を見るだけで、現在のVRChatの状況がわかります。  
-  * 障害検知時は自動的にステータスメッセージが「⚠️ 障害発生中」に切り替わります。  
-* **柔軟な通知設定**  
-  * **チャンネル登録**: コマンド一つで任意のチャンネルを通知先に設定可能。  
-  * **メンション管理**:  
-    * **ロールメンション**: @VRChat部 のように、特定のロールのみに通知を飛ばせます。  
-    * **個人メンション**: ユーザー個人が通知を購読（Subscribe）設定することも可能です。  
-* **AIチャット機能**  
-  * BotにメンションまたはDMを送ると、**Gemini 3 Flash Preview** を使用したアシスタントとして応答します。  
-  * 「今のステータスは？」などの質問に対し、最新の取得情報を踏まえて回答します。
+## 1. まず最初にやること（導入フロー）
 
-## **📦 必要要件**
+1. Botを起動する
+2. 通知を受け取りたいチャンネルで **/register\_notify**（管理者）
+3. 必要に応じてメンション設定
+   - ロール通知 … **/add\_notify\_role**
+   - 個人通知 … **/subscribe\_mention**
 
-* Python 3.10 以上  
-* **Google Gemini API Key** (Google AI Studio)  
-* **Discord Bot Token**  
-* (Optional) Twitter API Key (API.IO) / Google Custom Search API Key
+✅ **通知先が1件以上登録されると、10分ごとの定期監視が開始**されます。
 
-## **🛠 インストールと起動**
+---
 
-### **1\. リポジトリのクローン**
-```
-git clone https://github.com/YolM1003/discord-vrc-status-bot.git
-cd discord-vrc-status-bot
-```
-### **2\. 依存ライブラリのインストール**
-```
-pip install -r requirements.txt
-```
-Note: requirements.txt がない場合は以下をインストールしてください:  
-discord.py, requests, Pillow, pydantic, python-dotenv, google-genai
+## 2. 管理者向けコマンド
 
-### **3\. 環境変数の設定**
+> Botを導入したサーバーの管理者（Administrator権限を持つユーザー）が使用できます。
 
-.env.example をコピーして .env ファイルを作成し、キーを入力します。
-```
-cp .env.example .env
-```
-| 変数名 | 説明 | 必須 |
-| :---- | :---- | :---- |
-| GEMINI\_API\_KEY | Google AI Studioで取得したAPIキー | ✅ |
-| DISCORD\_BOT\_TOKEN | Discord Developer Portalで取得したBot Token | ✅ |
-| TWITTER\_API\_IO\_KEY | Twitter検索用APIキー（API.IOなど） | ➖ |
-| Google Search\_API\_KEY | Google Custom Search API Key（Web検索用） | ➖ |
+### 2.1 通知チャンネルの設定
 
-### **4\. Botの起動**
+- **/register\_notify**
 
-python discord\_vrc\_bot.py
+  - **機能**: コマンドを実行したテキストチャンネルを「通知先」として登録します。
+  - **例**: `#vrc_status` で実行すると、以後そのチャンネルに障害レポートが届きます。
 
-## **📜 License**
+- **/unregister\_notify**
 
-This project is licensed under the [MIT License](https://www.google.com/search?q=LICENSE).
+  - **機能**: 実行したチャンネルを通知先から解除します。
+
+> 監視タスクは「通知先が1つ以上ある状態」で動作します。
+
+### 2.2 ロールメンション設定
+
+- **/add\_notify\_role [role]**
+
+  - **機能**: 障害通知時にメンションするロールを追加します。
+
+- **/remove\_notify\_role [role]**
+
+  - **機能**: 指定ロールの通知メンションを解除します。
+
+### 2.3 動作テスト・診断（v2.0）
+
+v2.0より、テストは **目的別に2種類** あります。
+
+- **/test\_fake**（避難訓練モード）
+
+  - 偽の障害データ（「ログイン不可」「Major Outage」など）を入力として、AIの判定・通知・メンションを確認します。
+  - **目的**: 通知の見た目、メンション設定、Bot権限の確認。
+  - **注意**: 実際に「障害発生」相当の通知が飛びます（テストである旨のメッセージも表示されます）。
+
+- **/test\_real**（リアルタイム診断モード）
+
+  - 今現在のWeb/Twitter/公式Statusを **AIが強制調査** し、結果をEmbedで表示します。
+  - **目的**: 「次の定期チェックを待たずに、今の状況を知りたい」時に便利。
+
+---
+
+## 3. 一般ユーザー向けコマンド
+
+### 3.1 個人メンション通知
+
+- **/subscribe\_mention**
+
+  - **機能**: 障害通知時に自分へのメンションを受け取るように設定します。
+
+- **/unsubscribe\_mention**
+
+  - **機能**: 自分へのメンション通知を解除します。
+
+### 3.2 ステータス確認
+
+- **/vrc\_status**
+  - **機能**: 現在のVRChat状況を即座に調査し、AIの診断結果を表示します。
+  - **内容**:
+    - 公式Statusの状況
+    - Twitter等でのユーザー報告の傾向
+    - AIによる判定（深刻度 / 通知要否）
+
+---
+
+## 4. AIチャット機能
+
+Botに対して **メンション** を飛ばすか、**DM** を送ることで会話できます。
+
+- 例: 「今の状況はどう？」
+
+  - 公式情報だけでなく、TwitterやWeb情報も必要に応じて検索して回答します。
+
+- 例: 「〇〇について調べて」
+
+  - VRChatに限らず一般的な調べ物も可能です。
+
+### 注意点
+
+- この機能は `message_content` intent を使います（Developer Portalで有効化が必要）。
+- 生成AIの性質上、回答は誤る可能性があります。重要判断は公式情報も併用してください。
+
+---
+
+## 5. 障害判定ロジック（v2.0仕様）
+
+このBotは、調査担当と判定担当の **2段階** で動きます。
+
+### Phase 1: 調査（Investigation）
+
+- **Gemini 3 Flash Preview** が、以下を順に確認します。
+  1. 公式ステータスAPI
+  2. Twitter検索（任意キーがあれば）
+  3. Web検索（任意キーがあれば）
+  4. 重要そうなURLは本文を取得（Deep Dive）
+
+### Phase 2: 判定（Analysis）
+
+- **Gemini 2.5 Flash** が、調査結果を統合して以下を判定します。
+  - **is\_outage**: 障害または可能性が高いか
+  - **severity**: 深刻度（例: なし / 軽微 / 接続不可 / 公式発表あり）
+  - **should\_notify**: 通知すべきか
+  - **notification\_message**: Discord通知用メッセージ
+
+### 通知の基本方針
+
+- **Major Outage / 公式発表あり** … 原則通知
+- **サイレント障害（公式は静かでも報告が多発）** … 通知
+- **一時的なラグ（報告が少数・断続的）** … 通知しない
+
+---
+
+## 6. 旧コマンド（互換）
+
+- `!test_notify` … 廃止。案内メッセージを返します。
+- `!test_fake` / `!test_real` … スラッシュコマンド移行前の互換として残しています。
+
+---
+
+## 7. よくある質問（FAQ）
+
+### Q. 監視が始まりません
+
+- 通知先が1件も登録されていない可能性があります。
+- 管理者が通知チャンネルで **/register\_notify** を実行してください。
+
+### Q. Twitter/Web検索が動きません
+
+- `TWITTER_API_IO_KEY` / `GOOGLE_SEARCH_API_KEY` / `GOOGLE_SEARCH_CX` は任意です。
+- 未設定の場合はスキップされます（機能低下しますがBot自体は動きます）。
+
+### Q. 設定をリセットしたい
+
+- Bot停止後、`notify_channels.json` を削除（または退避）してください。
+
+---
