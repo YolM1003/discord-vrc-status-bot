@@ -1,163 +1,156 @@
-# VRChat Status Monitor Bot (v2.0 Beta)
+# 📖 VRChat Status Bot 操作マニュアル (v2.0 Beta)
 
-VRChatの **公式ステータス**（status.vrchat.com）と、Twitter(X)などの **ユーザー報告** を監視し、障害の兆候を検知したら Discord に通知するBotです。
-
-v2.0 Beta では **エージェント型（2段階）アーキテクチャ** を採用しています。
-
-- **Phase 1: 調査（Investigation）** … Gemini 3 Flash Preview が、公式API / Twitter検索 / Web検索を横断し、必要ならページ本文まで読み込んで調査します（Deep Dive）。
-- **Phase 2: 判定（Analysis）** … Gemini 2.5 Flash が、調査レポートを元に「障害か／通知すべきか」を JSON で判定します。
-
-> 公式発表前でも、ユーザー報告が急増している「サイレント障害」を拾いやすい設計です。
+このドキュメントでは、VRChat Status Monitor Bot v2.0 Beta の **導入後の使い方** と **全コマンド**、通知ロジックの概要をまとめます。
 
 ---
 
-## 主な機能
+## 1. まず最初にやること（導入フロー）
 
-- **自律型インテリジェント監視（2段階AI）**
-  - 公式Status → Twitter → Web検索 → 本文読み込み（必要時）
-  - 判定結果に応じて通知（通知が必要な時だけ）
-- **ステータスの視覚化**
-  - Botのプレゼンス（🟢 / ⛔️）やアクティビティで概況を表示
-- **進化したテスト機能**
-  - `/test_fake` … 偽データで通知・メンション・見た目を確認（避難訓練）
-  - `/test_real` … 今この瞬間の情報で診断（リアルタイム調査）
-- **AIチャット（メンション/DM）**
-  - Botにメンション、またはDMで話しかけると、検索込みで回答
-
----
-
-## 必要要件
-
-- Python **3.10+**
-- Discord Bot Token（必須）
-- Google Gemini API Key（必須 / Google AI Studio）
-- （任意）TwitterAPI.io の API Key（Twitter検索強化）
-- （任意）Google Custom Search API Key + CX（Web検索強化）
-
----
-
-## セットアップ
-
-### 1) リポジトリ取得
-
-```bash
-git clone https://github.com/YolM1003/discord-vrc-status-bot.git
-cd discord-vrc-status-bot
-```
-
-### 2) 依存ライブラリのインストール
-
-```bash
-pip install -r requirements.txt
-```
-
-> v2.0 では Deep Dive のため **beautifulsoup4** が必須です。
-
-### 3) 環境変数（.env）設定
-
-`.env.example` をコピーして `.env` を作成し、キーを入力してください。
-
-```bash
-cp .env.example .env
-```
-
-| 変数名                     | 説明                                     | 必須 |
-| ----------------------- | -------------------------------------- | -- |
-| `GEMINI_API_KEY`        | Google AI Studioで取得した Gemini APIキー     | ✅  |
-| `DISCORD_BOT_TOKEN`     | Discord Developer Portalで作成したBot Token | ✅  |
-| `TWITTER_API_IO_KEY`    | TwitterAPI.io のAPIキー（Twitter検索強化）      | ➖  |
-| `GOOGLE_SEARCH_API_KEY` | Google Custom Search API Key（Web検索強化）  | ➖  |
-| `GOOGLE_SEARCH_CX`      | Custom Search Engine ID（CX）            | ➖  |
-
-⚠️ **注意**: `.env` には秘密鍵が含まれます。絶対に共有・コミットしないでください。
-
-### 4) Bot起動
-
-```bash
-python discord_vrc_bot.py
-```
-
----
-
-## Discord側の設定（重要）
-
-### 権限（Botが必要な権限）
-
-- Send Messages
-- Embed Links（Embed表示を使う場合）
-- Read Message History（必要に応じて）
-
-### Privileged Intent（メンション会話で必須）
-
-このBotは **メンション/DM会話** のために `message_content` を使用します。 Discord Developer Portal で **Message Content Intent** を有効化してください。
-
-> 監視・スラッシュコマンド中心で使うだけなら会話が不要なケースもありますが、現状の実装では Intent をTrueにしています。
-
----
-
-## 使い方（最短）
-
-1. Botを起動
+1. Botを起動する
 2. 通知を受け取りたいチャンネルで **/register\_notify**（管理者）
-   - 登録が1件以上あると、**10分ごとの定期監視**が開始されます
-3. 必要ならメンション設定
-   - ロール: `/add_notify_role`
-   - 個人: `/subscribe_mention`
-4. 任意で手動診断
-   - `/vrc_status`（一般ユーザーOK）
+3. 必要に応じてメンション設定
+   - ロール通知 … **/add\_notify\_role**
+   - 個人通知 … **/subscribe\_mention**
+
+✅ **通知先が1件以上登録されると、10分ごとの定期監視が開始**されます。
 
 ---
 
-## コマンド一覧（概要）
+## 2. 管理者向けコマンド
 
-### 管理者向け
+> Botを導入したサーバーの管理者（Administrator権限を持つユーザー）が使用できます。
 
-- `/register_notify` … 実行したチャンネルを通知先に登録
-- `/unregister_notify` … 実行したチャンネルの登録解除
-- `/add_notify_role [role]` … 障害通知時にメンションするロールを追加
-- `/remove_notify_role [role]` … ロールメンション解除
-- `/test_fake` … 偽データで通知テスト
-- `/test_real` … 今現在の実データで診断テスト
+### 2.1 通知チャンネルの設定
 
-### 一般ユーザー向け
+- **/register\_notify**
 
-- `/subscribe_mention` … 自分へのメンション通知をON
-- `/unsubscribe_mention` … 自分へのメンション通知をOFF
-- `/vrc_status` … 現在の状況をAIが診断
+  - **機能**: コマンドを実行したテキストチャンネルを「通知先」として登録します。
+  - **例**: `#vrc_status` で実行すると、以後そのチャンネルに障害レポートが届きます。
 
-### 旧コマンド（互換）
+- **/unregister\_notify**
 
-- `!test_notify` … 廃止（案内表示のみ）
-- `!test_fake` / `!test_real` … 旧プレフィックスコマンドとして残しています
+  - **機能**: 実行したチャンネルを通知先から解除します。
 
----
+> 監視タスクは「通知先が1つ以上ある状態」で動作します。
 
-## データ保存
+### 2.2 ロールメンション設定
 
-通知先・メンション設定は、実行ディレクトリの `notify_channels.json` に保存されます。
+- **/add\_notify\_role [role]**
 
-- サーバー移設時はこのファイルを一緒に移すと設定を引き継げます
-- 初期化したい場合は、Bot停止後に削除（または退避）してください
+  - **機能**: 障害通知時にメンションするロールを追加します。
 
----
+- **/remove\_notify\_role [role]**
 
-## トラブルシューティング
+  - **機能**: 指定ロールの通知メンションを解除します。
 
-- `Error: .envファイルを確認してください ...`
-  - `.env` が存在しない / 変数が空 / 起動ディレクトリが違う可能性
-- スラッシュコマンドが出ない
-  - Bot招待URLに `applications.commands` スコープが付いているか確認
-  - `setup_hook` の `tree.sync()` 後に反映まで少し待つ場合があります
-- メンション会話が反応しない
-  - Developer Portal で **Message Content Intent** をON
-  - サーバー側の権限（メッセージ閲覧/送信）が足りているか確認
-- `Twitter API Key未設定のため検索スキップ`
-  - `TWITTER_API_IO_KEY` が未設定です（任意）
-- `Google Search API Key/CX 未設定のためスキップ`
-  - `GOOGLE_SEARCH_API_KEY` / `GOOGLE_SEARCH_CX` が未設定です（任意）
+### 2.3 動作テスト・診断（v2.0）
+
+v2.0より、テストは **目的別に2種類** あります。
+
+- **/test\_fake**（避難訓練モード）
+
+  - 偽の障害データ（「ログイン不可」「Major Outage」など）を入力として、AIの判定・通知・メンションを確認します。
+  - **目的**: 通知の見た目、メンション設定、Bot権限の確認。
+  - **注意**: 実際に「障害発生」相当の通知が飛びます（テストである旨のメッセージも表示されます）。
+
+- **/test\_real**（リアルタイム診断モード）
+
+  - 今現在のWeb/Twitter/公式Statusを **AIが強制調査** し、結果をEmbedで表示します。
+  - **目的**: 「次の定期チェックを待たずに、今の状況を知りたい」時に便利。
 
 ---
 
-## License
+## 3. 一般ユーザー向けコマンド
 
-MIT License（`LICENSE` を参照）
+### 3.1 個人メンション通知
+
+- **/subscribe\_mention**
+
+  - **機能**: 障害通知時に自分へのメンションを受け取るように設定します。
+
+- **/unsubscribe\_mention**
+
+  - **機能**: 自分へのメンション通知を解除します。
+
+### 3.2 ステータス確認
+
+- **/vrc\_status**
+  - **機能**: 現在のVRChat状況を即座に調査し、AIの診断結果を表示します。
+  - **内容**:
+    - 公式Statusの状況
+    - Twitter等でのユーザー報告の傾向
+    - AIによる判定（深刻度 / 通知要否）
+
+---
+
+## 4. AIチャット機能
+
+Botに対して **メンション** を飛ばすか、**DM** を送ることで会話できます。
+
+- 例: 「今の状況はどう？」
+
+  - 公式情報だけでなく、TwitterやWeb情報も必要に応じて検索して回答します。
+
+- 例: 「〇〇について調べて」
+
+  - VRChatに限らず一般的な調べ物も可能です。
+
+### 注意点
+
+- この機能は `message_content` intent を使います（Developer Portalで有効化が必要）。
+- 生成AIの性質上、回答は誤る可能性があります。重要判断は公式情報も併用してください。
+
+---
+
+## 5. 障害判定ロジック（v2.0仕様）
+
+このBotは、調査担当と判定担当の **2段階** で動きます。
+
+### Phase 1: 調査（Investigation）
+
+- **Gemini 3 Flash Preview** が、以下を順に確認します。
+  1. 公式ステータスAPI
+  2. Twitter検索（任意キーがあれば）
+  3. Web検索（任意キーがあれば）
+  4. 重要そうなURLは本文を取得（Deep Dive）
+
+### Phase 2: 判定（Analysis）
+
+- **Gemini 2.5 Flash** が、調査結果を統合して以下を判定します。
+  - **is\_outage**: 障害または可能性が高いか
+  - **severity**: 深刻度（例: なし / 軽微 / 接続不可 / 公式発表あり）
+  - **should\_notify**: 通知すべきか
+  - **notification\_message**: Discord通知用メッセージ
+
+### 通知の基本方針
+
+- **Major Outage / 公式発表あり** … 原則通知
+- **サイレント障害（公式は静かでも報告が多発）** … 通知
+- **一時的なラグ（報告が少数・断続的）** … 通知しない
+
+---
+
+## 6. 旧コマンド（互換）
+
+- `!test_notify` … 廃止。案内メッセージを返します。
+- `!test_fake` / `!test_real` … スラッシュコマンド移行前の互換として残しています。
+
+---
+
+## 7. よくある質問（FAQ）
+
+### Q. 監視が始まりません
+
+- 通知先が1件も登録されていない可能性があります。
+- 管理者が通知チャンネルで **/register\_notify** を実行してください。
+
+### Q. Twitter/Web検索が動きません
+
+- `TWITTER_API_IO_KEY` / `GOOGLE_SEARCH_API_KEY` / `GOOGLE_SEARCH_CX` は任意です。
+- 未設定の場合はスキップされます（機能低下しますがBot自体は動きます）。
+
+### Q. 設定をリセットしたい
+
+- Bot停止後、`notify_channels.json` を削除（または退避）してください。
+
+---
